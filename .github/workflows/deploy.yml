@@ -36,16 +36,21 @@ jobs:
             echo "Missing DEPLOY_URL secret in repository secrets."
             exit 1
           fi
+          DEPLOY_URL_CLEAN=$(printf '%s' "$DEPLOY_URL" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          if ! printf '%s' "$DEPLOY_URL_CLEAN" | grep -Eq '^https?://'; then
+            echo "DEPLOY_URL secret is not a valid http(s) URL."
+            exit 1
+          fi
           IMAGE_REPO=$(echo "${RAW_IMAGE_REPO}" | tr '[:upper:]' '[:lower:]')
+          echo "DEPLOY_URL_CLEAN=$DEPLOY_URL_CLEAN" >> "$GITHUB_ENV"
           echo "IMAGE_REPO=$IMAGE_REPO" >> "$GITHUB_ENV"
           echo "Deploy target image: ${IMAGE_REPO}:${IMAGE_TAG}"
 
       - name: Trien khai len DevOps Classroom
         shell: bash
-        env:
-          DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
         run: |
-          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${DEPLOY_URL}?repo=${IMAGE_REPO}&tag=${IMAGE_TAG}&slot=${SLOT}&container_port=${CONTAINER_PORT}&strict_container_port=${STRICT_CONTAINER_PORT}")
+          WEBHOOK_URL=$(python3 -c 'import os; from urllib.parse import urlencode; base = os.environ["DEPLOY_URL_CLEAN"]; params = {"repo": os.environ["IMAGE_REPO"], "tag": os.environ["IMAGE_TAG"], "slot": os.environ["SLOT"], "container_port": os.environ["CONTAINER_PORT"], "strict_container_port": os.environ["STRICT_CONTAINER_PORT"]}; print(f"{base}?{urlencode(params)}")')
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "$WEBHOOK_URL")
           BODY=$(echo "$RESPONSE" | sed '$d')
           CODE=$(echo "$RESPONSE" | tail -n1)
           echo "Webhook HTTP: $CODE"
