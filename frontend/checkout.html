@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đặt hàng – ShopDB</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="navbar-container"></div>
+  <main class="container">
+    <div id="checkout-content"></div>
+  </main>
+  <div id="footer-container"></div>
+
+  <script src="js/api.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar();
+    document.getElementById('footer-container').innerHTML = renderFooter();
+
+    const items = cart.get();
+    if (!items.length) window.location.href = 'cart.html';
+
+    const subtotal = cart.total();
+    const shipping = subtotal >= 500000 ? 0 : 30000;
+    const total = subtotal + shipping;
+
+    document.getElementById('checkout-content').innerHTML = `
+      <div style="padding:32px 0">
+        <h1 style="font-size:1.6rem;font-weight:800;margin-bottom:28px">📦 Xác nhận đặt hàng</h1>
+        <div class="checkout-layout">
+          <div>
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px;margin-bottom:20px">
+              <h3 style="font-size:1rem;font-weight:700;margin-bottom:20px">📍 Thông tin giao hàng</h3>
+              <div class="form-group">
+                <label>Họ và tên *</label>
+                <input type="text" id="fullName" placeholder="Nguyễn Văn A">
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="form-group">
+                  <label>Số điện thoại *</label>
+                  <input type="tel" id="phone" placeholder="0912345678">
+                </div>
+                <div class="form-group">
+                  <label>Email</label>
+                  <input type="email" id="email" placeholder="email@example.com">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Địa chỉ *</label>
+                <input type="text" id="address" placeholder="Số nhà, tên đường, phường/xã">
+              </div>
+              <div class="form-group">
+                <label>Tỉnh/Thành phố *</label>
+                <select id="city">
+                  <option value="">Chọn tỉnh/thành...</option>
+                  ${['Hà Nội','TP. Hồ Chí Minh','Đà Nẵng','Cần Thơ','Hải Phòng','Nha Trang','Huế','Đà Lạt','Vũng Tàu','Bình Dương'].map(c => `<option>${c}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Ghi chú</label>
+                <textarea id="note" placeholder="Ghi chú thêm về đơn hàng..."></textarea>
+              </div>
+            </div>
+
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px">
+              <h3 style="font-size:1rem;font-weight:700;margin-bottom:20px">💳 Phương thức thanh toán</h3>
+              <label style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--accent);border-radius:var(--radius);cursor:pointer;margin-bottom:10px;background:rgba(99,102,241,0.08)">
+                <input type="radio" name="payment" value="cod" checked> <span>💵 Thanh toán khi nhận hàng (COD)</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer">
+                <input type="radio" name="payment" value="banking"> <span>🏦 Chuyển khoản ngân hàng</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <div class="cart-summary">
+              <div class="summary-title">📋 Đơn hàng (${items.length} sản phẩm)</div>
+              ${items.map(i => `
+                <div class="summary-row">
+                  <span class="label" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.name} x${i.qty}</span>
+                  <span>${formatPrice(i.price * i.qty)}</span>
+                </div>
+              `).join('')}
+              <div class="summary-row">
+                <span class="label">Phí giao hàng</span>
+                <span style="color:${shipping===0?'var(--success)':'inherit'}">${shipping===0?'Miễn phí':formatPrice(shipping)}</span>
+              </div>
+              <div class="summary-row total">
+                <span class="label">Tổng cộng</span>
+                <span>${formatPrice(total)}</span>
+              </div>
+              <button class="btn-checkout" onclick="placeOrder()" id="btn-order">
+                ✅ Xác nhận đặt hàng
+              </button>
+              <a href="cart.html" style="display:block;text-align:center;margin-top:10px;font-size:0.82rem;color:var(--text-muted);text-decoration:none">← Quay lại giỏ hàng</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    async function placeOrder() {
+      const fullName = document.getElementById('fullName').value.trim();
+      const phone = document.getElementById('phone').value.trim();
+      const address = document.getElementById('address').value.trim();
+      const city = document.getElementById('city').value;
+      const email = document.getElementById('email').value.trim();
+      const note = document.getElementById('note').value.trim();
+      const payment = document.querySelector('input[name="payment"]:checked')?.value || 'cod';
+
+      if (!fullName || !phone || !address || !city) {
+        toast('error', '⚠️ Vui lòng điền đầy đủ thông tin bắt buộc!');
+        return;
+      }
+
+      const btn = document.getElementById('btn-order');
+      btn.disabled = true; btn.textContent = '⏳ Đang xử lý...';
+
+      try {
+        const user = auth.get();
+        const { data, message } = await api.post('/orders', {
+          items: items.map(i => ({ productId: i._id, quantity: i.qty })),
+          shippingAddress: { fullName, phone, address, city },
+          paymentMethod: payment,
+          guestName: user ? user.name : fullName,
+          guestEmail: email,
+          note,
+          user: user?._id
+        });
+
+        cart.clear();
+        window.location.href = `checkout.html?success=1&orderId=${data._id}`;
+      } catch (e) {
+        toast('error', '❌ ' + e.message);
+        btn.disabled = false; btn.textContent = '✅ Xác nhận đặt hàng';
+      }
+    }
+
+    // Show success state
+    if (new URLSearchParams(window.location.search).get('success')) {
+      const orderId = new URLSearchParams(window.location.search).get('orderId') || '';
+      document.getElementById('checkout-content').innerHTML = `
+        <div class="success-page">
+          <div class="success-icon">🎉</div>
+          <h1>Đặt hàng thành công!</h1>
+          <p>Cảm ơn bạn đã mua sắm tại ShopDB. Đơn hàng của bạn đang được xử lý.</p>
+          ${orderId ? `<p style="font-size:0.85rem;color:var(--text-muted)">Mã đơn hàng: <strong style="color:var(--accent-light)">${orderId}</strong></p>` : ''}
+          <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap">
+            <a href="index.html" class="btn-hero-primary">🛍️ Tiếp tục mua sắm</a>
+          </div>
+        </div>
+      `;
+    }
+
+    updateCartBadge();
+  </script>
+</body>
+</html>

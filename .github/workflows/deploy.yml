@@ -1,0 +1,62 @@
+name: Deploy DevOps Classroom
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy via webhook
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RAW_IMAGE_REPO: ${{ github.repository }}
+      IMAGE_TAG: latest
+      CONTAINER_PORT: 80
+      SLOT: 2
+      STRICT_CONTAINER_PORT: 0
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Check deploy config
+        shell: bash
+        env:
+          DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+        run: |
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "Missing DEPLOY_URL secret in repository secrets."
+            exit 1
+          fi
+          IMAGE_REPO=$(echo "${RAW_IMAGE_REPO}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_REPO=$IMAGE_REPO" >> "$GITHUB_ENV"
+          echo "Deploy target image: ${IMAGE_REPO}:${IMAGE_TAG}"
+
+      - name: Trien khai len DevOps Classroom
+        shell: bash
+        env:
+          DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+        run: |
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${DEPLOY_URL}?repo=${IMAGE_REPO}&tag=${IMAGE_TAG}&slot=${SLOT}&container_port=${CONTAINER_PORT}&strict_container_port=${STRICT_CONTAINER_PORT}")
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          CODE=$(echo "$RESPONSE" | tail -n1)
+          echo "Webhook HTTP: $CODE"
+          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
+            echo "Deploy that bai. Xem chi tiet trong nhom log ben duoi."
+            echo "::group::Chi tiet webhook JSON"
+            echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "Deploy thanh cong."
+          echo "::group::Chi tiet webhook JSON"
+          echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+          echo "::endgroup::"

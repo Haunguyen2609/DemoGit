@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chi tiết sản phẩm – ShopDB</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="navbar-container"></div>
+  <main class="container">
+    <div id="breadcrumb" style="padding:16px 0;font-size:0.82rem;color:var(--text-muted)">
+      <a href="index.html" style="color:var(--accent-light);text-decoration:none">Trang chủ</a> → <span id="breadcrumb-name">...</span>
+    </div>
+    <div id="product-detail">
+      <div class="loading"><div class="spinner"></div><p>Đang tải...</p></div>
+    </div>
+
+    <!-- RELATED PRODUCTS -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Sản phẩm <span>liên quan</span></h2>
+      </div>
+      <div id="related-grid" class="product-grid"></div>
+    </section>
+  </main>
+  <div id="footer-container"></div>
+
+  <script src="js/api.js"></script>
+  <script>
+    document.getElementById('navbar-container').innerHTML = renderNavbar();
+    document.getElementById('footer-container').innerHTML = renderFooter();
+
+    const pid = new URLSearchParams(window.location.search).get('id');
+    let qty = 1;
+
+    async function loadProduct() {
+      if (!pid) { window.location.href = 'index.html'; return; }
+      const el = document.getElementById('product-detail');
+      try {
+        const { data: p } = await api.get(`/products/${pid}`);
+        document.title = `${p.name} – ShopDB`;
+        document.getElementById('breadcrumb-name').textContent = p.name;
+
+        const disc = p.originalPrice ? Math.round((1 - p.price / p.originalPrice) * 100) : 0;
+
+        el.innerHTML = `
+          <div class="product-detail-grid">
+            <div class="detail-images">
+              <img class="main-img" id="main-img" src="${p.images[0]}" alt="${p.name}">
+              <div class="thumb-row">
+                ${p.images.map((img, i) => `
+                  <img src="${img}" alt="Ảnh ${i+1}" class="${i===0?'active':''}" onclick="changeImg('${img}', this)">
+                `).join('')}
+              </div>
+            </div>
+            <div class="detail-info">
+              <div class="product-detail-badge">
+                ${p.isNew ? '<span class="badge badge-new">Mới về</span>' : ''}
+                ${p.isSale ? '<span class="badge badge-sale">Đang giảm giá</span>' : ''}
+              </div>
+              <p style="font-size:0.8rem;color:var(--accent-light);font-weight:600;margin-bottom:6px">${p.category?.name || ''}</p>
+              <h1>${p.name}</h1>
+              <div style="display:flex;align-items:center;gap:6px;font-size:0.85rem">
+                <span style="color:var(--warning)">${renderStars(p.rating)}</span>
+                <span style="color:var(--text-secondary)">${p.rating}/5 (${p.reviewCount} đánh giá)</span>
+                <span style="color:var(--text-muted)">|</span>
+                <span style="color:var(--text-secondary)">Đã bán: ${p.sold.toLocaleString('vi-VN')}</span>
+              </div>
+              <div class="detail-price-row">
+                <span class="detail-price">${formatPrice(p.price)}</span>
+                ${p.originalPrice ? `<span class="detail-original">${formatPrice(p.originalPrice)}</span>` : ''}
+                ${disc > 0 ? `<span class="detail-discount">-${disc}%</span>` : ''}
+              </div>
+              <p class="detail-desc">${p.description}</p>
+              <p class="detail-stock">✅ Còn ${p.stock} sản phẩm trong kho</p>
+              <div class="qty-row">
+                <span style="font-size:0.85rem;color:var(--text-secondary)">Số lượng:</span>
+                <div class="qty-control">
+                  <button class="qty-btn" onclick="changeQty(-1)">−</button>
+                  <span class="qty-val" id="qty-val">1</span>
+                  <button class="qty-btn" onclick="changeQty(1)">+</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px">
+                <button class="btn-detail-cart" onclick="addProduct(${JSON.stringify(p).replace(/"/g,'&quot;')})">🛒 Thêm vào giỏ hàng</button>
+                <a href="cart.html" class="btn-detail-cart" style="background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);text-decoration:none;text-align:center" onclick="addProduct(${JSON.stringify(p).replace(/"/g,'&quot;')})">⚡ Mua ngay</a>
+              </div>
+              <div style="margin-top:20px;padding:16px;background:var(--bg-secondary);border-radius:var(--radius);border:1px solid var(--border)">
+                <p style="font-size:0.82rem;color:var(--text-secondary)">🚚 <strong>Miễn phí giao hàng</strong> cho đơn từ 500.000₫</p>
+                <p style="font-size:0.82rem;color:var(--text-secondary);margin-top:6px">🔄 <strong>Đổi trả 30 ngày</strong> nếu không hài lòng</p>
+              </div>
+            </div>
+          </div>
+        `;
+
+        loadRelated(p.category?._id, pid);
+      } catch (e) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><h3>${e.message}</h3><a href="index.html" class="btn-hero-primary">Về trang chủ</a></div>`;
+      }
+    }
+
+    function changeImg(src, el) {
+      document.getElementById('main-img').src = src;
+      document.querySelectorAll('.thumb-row img').forEach(i => i.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    function changeQty(delta) {
+      qty = Math.max(1, qty + delta);
+      document.getElementById('qty-val').textContent = qty;
+    }
+
+    function addProduct(p) {
+      cart.add(p, qty);
+      updateCartBadge();
+    }
+
+    async function loadRelated(catId, excludeId) {
+      if (!catId) return;
+      try {
+        const { data } = await api.get(`/products?category=${catId}&limit=4`);
+        const filtered = data.filter(p => p._id !== excludeId).slice(0, 4);
+        if (!filtered.length) return;
+        document.getElementById('related-grid').innerHTML = filtered.map(p => `
+          <div class="product-card" onclick="window.location.href='product.html?id=${p._id}'">
+            <div class="product-img-wrap">
+              <img src="${p.images[0]}" alt="${p.name}" loading="lazy">
+            </div>
+            <div class="product-info">
+              <div class="product-name">${p.name}</div>
+              <div class="product-price"><span class="price-current">${formatPrice(p.price)}</span></div>
+            </div>
+          </div>
+        `).join('');
+      } catch {}
+    }
+
+    loadProduct();
+    updateCartBadge();
+  </script>
+</body>
+</html>
