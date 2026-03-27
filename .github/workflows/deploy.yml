@@ -1,4 +1,4 @@
-name: Deploy DevOps Classroom
+name: Build And Deploy DevOps Classroom
 
 on:
   push:
@@ -13,12 +13,12 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy via webhook
+    name: Build frontend image and deploy
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
-      RAW_IMAGE_REPO: ${{ github.repository }}
+      RAW_IMAGE_NAME: ${{ github.event.repository.name }}
       IMAGE_TAG: latest
       CONTAINER_PORT: 80
       SLOT: 8
@@ -27,13 +27,23 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Check deploy config
+        id: prep
         shell: bash
         env:
           DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           if [ -z "$DEPLOY_URL" ]; then
             echo "Missing DEPLOY_URL secret in repository secrets."
+            exit 1
+          fi
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "Missing DOCKERHUB_USERNAME or DOCKERHUB_TOKEN secret."
             exit 1
           fi
           DEPLOY_URL_CLEAN=$(printf '%s' "$DEPLOY_URL" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -41,13 +51,30 @@ jobs:
             echo "DEPLOY_URL secret is not a valid http(s) URL."
             exit 1
           fi
-          IMAGE_REPO=$(echo "${RAW_IMAGE_REPO}" | tr '[:upper:]' '[:lower:]')
-          echo "DEPLOY_URL_CLEAN=$DEPLOY_URL_CLEAN" >> "$GITHUB_ENV"
-          echo "IMAGE_REPO=$IMAGE_REPO" >> "$GITHUB_ENV"
+          IMAGE_REPO=$(printf '%s/%s' "$DOCKERHUB_USERNAME" "$RAW_IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          echo "deploy_url_clean=$DEPLOY_URL_CLEAN" >> "$GITHUB_OUTPUT"
+          echo "image_repo=$IMAGE_REPO" >> "$GITHUB_OUTPUT"
           echo "Deploy target image: ${IMAGE_REPO}:${IMAGE_TAG}"
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ steps.prep.outputs.image_repo }}:${{ env.IMAGE_TAG }}
 
       - name: Trien khai len DevOps Classroom
         shell: bash
+        env:
+          DEPLOY_URL_CLEAN: ${{ steps.prep.outputs.deploy_url_clean }}
+          IMAGE_REPO: ${{ steps.prep.outputs.image_repo }}
         run: |
           WEBHOOK_URL=$(python3 -c 'import os; from urllib.parse import urlencode; base = os.environ["DEPLOY_URL_CLEAN"]; params = {"repo": os.environ["IMAGE_REPO"], "tag": os.environ["IMAGE_TAG"], "slot": os.environ["SLOT"], "container_port": os.environ["CONTAINER_PORT"], "strict_container_port": os.environ["STRICT_CONTAINER_PORT"]}; print(f"{base}?{urlencode(params)}")')
           RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "$WEBHOOK_URL")
