@@ -1,21 +1,59 @@
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = (() => {
+  if (window.__API_BASE__) {
+    return String(window.__API_BASE__).replace(/\/$/, '');
+  }
+
+  const { hostname, origin } = window.location;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:5000/api';
+  }
+
+  return `${origin}/api`;
+})();
+
+async function parseResponse(res) {
+  const contentType = res.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    return res.json();
+  }
+
+  const text = await res.text();
+  if (/^\s*</.test(text)) {
+    throw new Error('Backend API chua duoc deploy hoac chua cau hinh dung.');
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(text || 'Loi server');
+  }
+}
 
 const api = {
   async get(path) {
-    const res = await fetch(`${API_BASE}${path}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Lỗi server');
-    return data;
+    try {
+      const res = await fetch(`${API_BASE}${path}`);
+      const data = await parseResponse(res);
+      if (!res.ok) throw new Error(data.message || 'Loi server');
+      return data;
+    } catch (error) {
+      throw new Error(error.message || 'Khong the ket noi den backend API');
+    }
   },
   async post(path, body) {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Lỗi server');
-    return data;
+    try {
+      const res = await fetch(`${API_BASE}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await parseResponse(res);
+      if (!res.ok) throw new Error(data.message || 'Loi server');
+      return data;
+    } catch (error) {
+      throw new Error(error.message || 'Khong the ket noi den backend API');
+    }
   }
 };
 
